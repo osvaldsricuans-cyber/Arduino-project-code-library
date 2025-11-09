@@ -1,0 +1,50 @@
+#include <U8g2lib.h>
+#include <SPI.h>
+#include "DHT.h"
+
+// ----- DHT11 Setup -----
+#define DHTPIN 2
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// ----- OLED Setup (SPI) -----
+U8G2_SH1106_128X64_NONAME_F_HW_SPI u8g2(
+  U8G2_R0,   // rotation
+  /*CS=*/ 10,
+  /*DC=*/ 8,
+  /*RESET=*/ 9
+);
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  u8g2.begin();
+}
+
+void loop() {
+  float temp = dht.readTemperature();  // °C
+  float hum  = dht.readHumidity();     // %
+
+  // Serial output
+  if (!isnan(temp) && !isnan(hum)) {
+    Serial.print("Temp: "); Serial.print(temp); Serial.print(" °C, ");
+    Serial.print("Humidity: "); Serial.print(hum); Serial.println(" %");
+  } else {
+    Serial.println("Failed to read from DHT11!");
+  }
+
+  // Display on OLED
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.setCursor(0, 20);
+  if (!isnan(temp) && !isnan(hum)) {
+    u8g2.print("Temp: "); u8g2.print(temp); u8g2.print(" C");
+    u8g2.setCursor(0, 40);
+    u8g2.print("Humidity: "); u8g2.print(hum); u8g2.print(" %");
+  } else {
+    u8g2.print("Sensor error!");
+  }
+  u8g2.sendBuffer();
+
+  delay(2000);  // update every 2 seconds
+}
