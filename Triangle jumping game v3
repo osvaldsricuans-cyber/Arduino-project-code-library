@@ -1,0 +1,93 @@
+ // --- Jump ---
+  if (!gameOver && buttonNow && !buttonWasPressed && playerY == groundY) {
+    jumping = true;
+}
+
+  // --- Reset game ---
+  if (gameOver && buttonNow && !buttonWasPressed) {
+    gameOver = false;
+    score = 0;
+    playerX = 20;
+    playerY = 40;
+    jumping = false;
+    x1 = 128; x2 = 123; x3 = 118;
+  }
+
+  // --- Save button state for next loop ---
+  buttonWasPressed = buttonNow;
+
+  // --- MOVEMENT AND TIMING ---
+  if (now - last >= moveDelay && !gameOver) {
+
+    // Move triangle
+    int prevX1 = x1;
+    int prevX3 = x3;
+
+    x1 -= triangleSpeed;
+    x2 -= triangleSpeed;
+    x3 -= triangleSpeed;
+
+    // Reset triangle when fully off-screen
+    if (x3 < 0) {
+      x1 = 128; x2 = 123; x3 = 118;
+      score++;  // optional: increase score when obstacle passed
+    }
+
+    
+    // Player jump/fall
+if (jumping) {
+    playerY -= 3;                // move up
+    if (playerY <= 20) jumping = false;  // peak of jump
+} else if (playerY < groundY) {
+    playerY += 3;                // fall down
+    if (playerY > groundY) playerY = groundY; // clamp to ground
+}
+
+
+    // --- COLLISION CHECK (swept collision) ---
+    bool horizontalOverlap = (playerX + playerRadius >= x1) && (playerX - playerRadius <= prevX3);
+    bool verticalOverlap = (playerY + playerRadius >= y2) && (playerY - playerRadius <= y1);
+    if (horizontalOverlap && verticalOverlap) {
+      gameOver = true;
+    }
+
+    last = now;
+  }
+
+  // --- DRAW ---
+  U8G2.clearBuffer();
+  U8G2.drawLine(0, 45, 128, 45);
+  U8G2.drawLine(69, 55, 76, 55);
+  U8G2.drawLine(5, 50, 15, 50);
+  U8G2.drawLine(9, 56, 13, 56);
+  U8G2.drawLine(70, 62, 81, 62);
+  U8G2.drawLine(90, 52, 103, 52);
+  U8G2.drawLine(30, 60, 27, 60);
+
+  // Ground
+  U8G2.drawLine(0, 45, 128, 45);
+  
+  
+  // Player
+  U8G2.drawDisc(playerX, playerY, playerRadius);
+
+  // Triangle
+  U8G2.drawLine(x1, y1, x2, y2);
+  U8G2.drawLine(x2, y2, x3, y3);
+  U8G2.drawLine(x3, y3, x1, y1);
+
+  // Game over
+  if (gameOver) {
+    U8G2.setCursor(30, 30);
+    U8G2.print("Tu zaudeji");
+    U8G2.setCursor(100, 10);
+    U8G2.print(score);
+  }
+  U8G2.setCursor(75, 10);
+  U8G2.print("Punkti:");
+  U8G2.setCursor(120, 10);
+  U8G2.print(score);
+  U8G2.sendBuffer();
+
+  U8G2.sendBuffer();
+}
