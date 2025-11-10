@@ -1,0 +1,115 @@
+#include <U8g2lib.h>
+#include <SPI.h>
+#define BUTTON 2
+
+U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI U8G2(U8G2_R0, 10, 8, 9);
+
+// Player
+int playerX = 20;     // starting X
+int playerY = 40;     // starting Y (ground)
+int playerRadius = 5;
+bool jumping = false;
+bool buttonWasPressed = false;
+int score = 0;
+// Triangle
+int x1 = 128, y1 = 45;  // bottom-left
+int x2 = 123, y2 = 35;  // top
+int x3 = 118, y3 = 45;  // bottom-right
+
+// Timing
+unsigned long last = 0;
+int moveDelay = 30; // ms per frame
+
+// Game state
+bool gameOver = false;
+
+void setup() {
+  U8G2.begin();
+  pinMode(BUTTON, INPUT_PULLUP);
+  U8G2.setFont(u8g2_font_ncenB08_tr);  // choose a readable font
+
+}
+
+
+void loop() {
+
+  // --- BUTTON PRESS ---
+  bool buttonNow = (digitalRead(BUTTON) == LOW);
+  if (buttonNow && !buttonWasPressed && !jumping && playerY == 40 && !gameOver) {
+    jumping = true;
+  }
+  buttonWasPressed = buttonNow;
+
+  unsigned long now = millis();
+  if (now - last >= moveDelay && !gameOver) {
+
+    // --- PLAYER JUMP ---
+    if (jumping) {
+      playerY -= 2;           // go up
+      if (playerY <= 10) jumping = false;  // peak
+    } else if (playerY < 40) {
+      playerY += 2;           // fall
+    }
+
+    // --- TRIANGLE MOVE ---
+    x1--; x2--; x3--;
+    if (x3 < 0) {             // reset when fully off-screen
+      x1 = 128; x2 = 123; x3 = 118;
+      score++;
+      U8G2.setCursor(100, 10);
+      U8G2.print(score);
+      U8G2.sendBuffer();
+    }
+
+    // --- COLLISION CHECK ---
+    bool horizontalOverlap = (playerX + playerRadius >= x1) && (playerX - playerRadius <= x3);
+    bool verticalOverlap = (playerY + playerRadius >= y2) && (playerY - playerRadius <= y1);
+    if (horizontalOverlap && verticalOverlap) {
+      gameOver = true;
+    }
+
+    last = now;
+  }
+  if (gameOver && (digitalRead(BUTTON) == LOW)) {
+    gameOver = false;
+    score = 0;
+
+    // Reset triangle
+    x1 = 128; y1 = 45;
+    x2 = 123; y2 = 35;
+    x3 = 118; y3 = 45;
+
+    // Reset player
+    playerX = 20;
+    playerY = 40;
+    jumping = false;
+
+    U8G2.clearBuffer();
+}
+
+
+  // --- DRAW ---
+  U8G2.clearBuffer();
+
+  // Ground
+  U8G2.drawLine(0, 45, 128, 45);
+
+  // Player
+  U8G2.drawDisc(playerX, playerY, playerRadius);
+
+  // Triangle
+  U8G2.drawLine(x1, y1, x2, y2);
+  U8G2.drawLine(x2, y2, x3, y3);
+  U8G2.drawLine(x3, y3, x1, y1);
+
+  // Game over message
+  if (gameOver) {
+    U8G2.setCursor(30, 30);
+    U8G2.print("Tu zaudeji");
+  }
+      U8G2.setCursor(100, 10);
+      U8G2.print(score);
+      U8G2.sendBuffer();
+
+  U8G2.sendBuffer();
+}
