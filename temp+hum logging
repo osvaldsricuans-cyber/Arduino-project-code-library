@@ -1,0 +1,53 @@
+void loadLogIndex() {
+  logIndex = EEPROM.read(EEPROM_SIZE - 1);
+  if (logIndex > MAX_READINGS) logIndex = 0;
+}
+
+void dumpEEPROMLog() {
+  Serial.println("EEPROM log dump:");
+  for (int i = 0; i < logIndex; i++) {
+    int addr = i * READING_SIZE;
+    float t = readFloatFromEEPROM(addr);
+    float h = readFloatFromEEPROM(addr + 4);
+    Serial.print("Reading "); Serial.print(i+1); Serial.print(": ");
+    Serial.print(t); Serial.print(" C, ");
+    Serial.print(h); Serial.println(" %");
+  }
+  Serial.println("---- End of log ----");
+}
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  loadLogIndex();
+  Serial.println("Logger ready. Send 'd' to dump log.");
+}
+
+void loop() {
+  // --- Serial command to dump EEPROM ---
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'd') {  // send 'd' via Serial to dump log
+      dumpEEPROMLog();
+    }
+  }
+
+  // --- Read DHT every interval ---
+  if (millis() - lastRead >= readInterval) {
+    lastRead = millis();
+
+    float newHum = dht.readHumidity();
+    float newTemp = dht.readTemperature();
+
+    if (!isnan(newTemp) && !isnan(newHum) && newHum <= 100) {
+      temp = newTemp;
+      hum  = newHum;
+      logReading(temp, hum);
+      Serial.print("Logged: ");
+      Serial.print(temp); Serial.print(" C, ");
+      Serial.print(hum); Serial.println(" %");
+    } else {
+      Serial.println("Sensor error!");
+    }
+  }
+}
