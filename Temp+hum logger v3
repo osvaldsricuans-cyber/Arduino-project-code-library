@@ -1,0 +1,181 @@
+#include <EEPROM.h>
+#include "DHT.h"
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+const unsigned long READ_INTERVAL = 2500UL; // 1 hour
+const int MAX_LOGS = 120;                      // Max EEPROM slots (depends on EEPROM size)
+const float DAY_MARKER = -9999.0;              // Marks the end of a day
+
+int logIndex = 0;
+float tempSum = 0;
+float humSum = 0;
+int readingCount = 0;
+int Hour = 1;
+int Hstatus = true;
+int AVGstatus = true;
+unsigned long lastReadTime = 0;
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+
+  // Find where we left off in EEPROM
+  logIndex = findLastLogIndex();
+
+  Serial.println("Hourly DHT11 Logger (EEPROM based)");
+  Serial.println("Send 'd' to dump logs or 'c' to clear memory.");
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+
+  // Read every hour
+  if (currentMillis - lastReadTime >= READ_INTERVAL) {
+    lastReadTime = currentMillis;
+
+    float temp = dht.readTemperature();
+    float hum  = dht.readHumidity();
+
+    if (!isnan(temp) && !isnan(hum)) {
+      logReading(temp, hum);
+      tempSum += temp;
+      humSum += hum;
+      readingCount++;
+
+      Serial.print("Logged: ");
+      Serial.print(temp);
+      Serial.print("C  ");
+      Serial.print(hum);
+      Serial.println("%");
+    } else {
+      Serial.println("Sensor error, skipping...");
+    }
+
+    // After 24 hourly readings → average + day marker
+    if (readingCount >= 24) {
+      float avgTemp = tempSum / 24.0;
+      float avgHum  = humSum / 24.0;
+
+      Serial.println("---- Daily Average ----");
+      Serial.print("Temp: "); Serial.println(avgTemp);
+      Serial.print("Hum:  "); Serial.println(avgHum);
+      Serial.println("-----------------------");
+
+      // Log average
+      logReading(avgTemp, avgHum);
+
+      // Log day marker
+      logReading(DAY_MARKER, DAY_MARKER);
+
+      // Reset counters
+      tempSum = 0;
+      humSum = 0;
+      readingCount = 0;
+    }
+  }
+
+  // Serial commands
+  if (Serial.available()) {
+  String command = Serial.readStringUntil('\n'); // Read until Enter key
+  command.trim(); // Remove spaces or line breaks
+
+  if (command == "d") {
+    dumpLogs();
+  } 
+  else if (command == "c") {
+    clearEEPROM();
+    Serial.println("Memory cleared!");
+  } 
+  else if (command == "Help") {
+    Serial.println("Instructions:");
+    Serial.println(" - Send 'd' to dump log");
+    Serial.println(" - Send 'c' to clear Memory");
+    Serial.println(" - Send 'Help' to show this message");
+    Serial.println("Logging temperature and humidity every hour,");
+    Serial.println("and averaging every 24 readings (1 day).");
+    Serial.println(" ");
+    
+  } 
+  else {
+    Serial.println("Unknown command. Type 'how' for help.");
+  }
+}
+
+}
+
+// ---- EEPROM FUNCTIONS ----
+
+void logReading(float temp, float hum) {
+  if (logIndex + 2 > MAX_LOGS) {
+    Serial.println("EEPROM full, overwriting oldest data.");
+    logIndex = 0; // Circular buffer behavior
+  }
+
+  EEPROM.put(logIndex * sizeof(float) * 2, temp);
+  EEPROM.put(logIndex * sizeof(float) * 2 + sizeof(float), hum);
+  logIndex++;
+}
+
+int findLastLogIndex() {
+  for (int i = 0; i < MAX_LOGS; i++) {
+    float t;
+    EEPROM.get(i * sizeof(float) * 2, t);
+    if (isnan(t)) return i;
+  }
+  return 0;
+}
+
+void dumpLogs() {
+  Serial.println("---- EEPROM LOG DUMP ----");
+
+  for (int i = 0; i < MAX_LOGS; i++) {
+    float temp, hum;
+    EEPROM.get(i * sizeof(float) * 2, temp);
+    EEPROM.get(i * sizeof(float) * 2 + sizeof(float), hum); 
+   
+
+    if (isnan(temp)) break;
+
+    if (temp == DAY_MARKER && hum == DAY_MARKER) {
+      Serial.println("=== END OF DAY ===");
+       Hour = 1;
+       Hstatus = true;
+       AVGstatus = true;
+    } else {
+       Serial.print("Hour");
+       Serial.print(" ");
+       Serial.print(Hour );
+       Serial.print(" " );
+      Serial.print("Temp: "); 
+      Serial.print(temp);
+      Serial.print(" C | Hum: ");
+      Serial.print(hum );
+      Serial.println(" %");
+
+      if (Hour < 24 && Hstatus == true){
+        Hstatus = true;
+        Hour++;
+        }
+        else{
+               if(  AVGstatus == true)
+                 Serial.print("AVG from Hour 1 to ");
+                 AVGstatus = false;
+
+          }
+     
+      
+      
+    }
+  }
+
+  Serial.println("---------------------------");
+}
+
+void clearEEPROM() {
+  for (int i = 0; i < EEPROM.length(); i++) {
+    EEPROM.write(i, 0xFF);
+  }
+}
