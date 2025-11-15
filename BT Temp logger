@@ -1,0 +1,98 @@
+#include <DHT.h>
+#include <SD.h>
+#include <SPI.h>
+#include <BluetoothSerial.h>
+#include <ArduinoJson.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+#define SD_CS 5
+
+BluetoothSerial SerialBT;
+
+// Variables to track time from phone
+unsigned long startTime = 0;  // seconds
+unsigned long startMillis = 0;
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32_LOGGER");
+  dht.begin();
+
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD card init failed!");
+  } else {
+    Serial.println("SD card ready");
+  }
+
+  Serial.println("Send 'T,<seconds>' to set start time or '1' to take a reading.");
+}
+
+String getFormattedTime() {
+  if (startMillis == 0) return "00:00";
+
+  unsigned long elapsed = (millis() - startMillis) / 1000; // seconds elapsed
+  unsigned long totalSeconds = startTime + elapsed;
+
+  int hours = (totalSeconds / 3600) % 24;
+  int minutes = (totalSeconds / 60) % 60;
+  int seconds = totalSeconds % 60;
+
+  char buf[9];
+  sprintf(buf, "%02d:%02d:%02d", hours, minutes, seconds);
+  return String(buf);
+}
+
+void takeMeasurement() {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+
+  if (isnan(t) || isnan(h)) {
+    SerialBT.println("Sensor error");
+    return;
+  }
+
+  String timestamp = getFormattedTime();
+
+  // Build JSON
+  StaticJsonDocument<200> doc;
+  doc["temp"] = t;
+  doc["hum"] = h;
+  doc["time"] = timestamp;
+
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+
+  SerialBT.println(jsonStr);
+
+  // Save to SD
+  File f = SD.open("/log.txt", FILE_APPEND);
+  if (f) {
+    f.println(jsonStr);
+    f.close();
+  }
+}
+
+void loop() {
+  if (SerialBT.available()) {
+    String msg = SerialBT.readStringUntil('\n');
+    msg.trim();
+
+    if (msg.startsWith("T,")) {
+      String tStr = msg.substring(2);
+      startTime = tStr.toInt();
+      startMillis = millis();
+      SerialBT.println("Start time set: " + getFormattedTime());
+    } else if (msg == "1") {
+      if (startMillis == 0) {
+        SerialBT.println("Error: Set start time first using T,<seconds>");
+      } else {
+        takeMeasurement();
+      }
+    } else {
+      SerialBT.println("Unknown command. Use 'T,<seconds>' or '1'");
+    }
+  }
+}
