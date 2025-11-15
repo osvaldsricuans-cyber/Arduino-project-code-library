@@ -1,0 +1,154 @@
+#include <DHT.h>
+#include <SD.h>
+#include <SPI.h>
+#include <BluetoothSerial.h>
+#include <ArduinoJson.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+#define SD_CS 5
+
+BluetoothSerial SerialBT;
+
+int Calib = 0;
+
+// ---- TIME VARIABLES ----
+unsigned long startTime = 0;  // in seconds
+unsigned long startMillis = 0;
+
+// ---- FUNCTION DEFINITIONS ----
+void takeMeasurement();
+void calib();
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32_LOGGER");
+  dht.begin();
+
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD card init failed!");
+  } else {
+    Serial.println("SD card ready");
+  }
+
+  Serial.println("Commands:");
+  Serial.println(" T,HH:MM  -> set time");
+  Serial.println(" 1        -> measure");
+  Serial.println(" 2        -> calibrate x6");
+}
+
+String getFormattedTime() {
+  if (startMillis == 0) return "00:00:00";
+
+  unsigned long elapsed = (millis() - startMillis) / 1000;
+  unsigned long totalSeconds = startTime + elapsed;
+
+  int hours = (totalSeconds / 3600) % 24;
+  int minutes = (totalSeconds / 60) % 60;
+  int seconds = totalSeconds % 60;
+
+  char buf[9];
+  sprintf(buf, "%02d:%02d:%02d", hours, minutes, seconds);
+  return String(buf);
+}
+
+void takeMeasurement() {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+
+  if (isnan(t) || isnan(h)) {
+    SerialBT.println("Sensor error");
+    return;
+  }
+
+  String timestamp = getFormattedTime();
+
+  StaticJsonDocument<200> doc;
+  doc["temp"] = t;
+  doc["hum"] = h;
+  doc["time"] = timestamp;
+
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+  SerialBT.println(jsonStr);
+
+  File f = SD.open("/log.txt", FILE_APPEND);
+  if (f) {
+    f.println(jsonStr);
+    f.close();
+  }
+}
+
+// ---- CALIBRATION FUNCTION ----
+void calib() {
+  takeMeasurement();
+  delay(10000);
+}
+
+void loop() {
+  if (!SerialBT.available()) return;
+
+  String msg = SerialBT.readStringUntil('\n');
+  msg.trim();
+
+  // -------------------------
+  // SET TIME (HH:MM FORMAT)
+  // -------------------------
+  if (msg.startsWith("T,")) {
+    String timeStr = msg.substring(2);
+    timeStr.trim();
+
+    int colonPos = timeStr.indexOf(':');
+    if (colonPos == -1) {
+      SerialBT.println("Error: Time must be HH:MM");
+      return;
+    }
+
+    int hours = timeStr.substring(0, colonPos).toInt();
+    int minutes = timeStr.substring(colonPos + 1).toInt();
+
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      SerialBT.println("Error: Invalid time");
+      return;
+    }
+
+    startTime = hours * 3600 + minutes * 60;
+    startMillis = millis();
+
+    SerialBT.println("Start time set: " + getFormattedTime());
+    return;
+  }
+
+  // -------------------------
+  // TAKE MEASUREMENT
+  // -------------------------
+  if (msg == "1") {
+    if (startMillis == 0) {
+      SerialBT.println("Error: Set time first using T,HH:MM");
+    } else {
+      takeMeasurement();
+    }
+    return;
+  }
+
+  // -------------------------
+  // CALIBRATION RUN (6x)
+  // -------------------------
+  if (msg == "2") {
+    Calib = 0;
+    for (int i = 0; i < 6; i++) {
+      calib();
+      Calib++;
+    }
+    SerialBT.println("Calib Done");
+    Calib = 0;
+    return;
+  }
+
+  // -------------------------
+  // UNKNOWN COMMAND
+  // -------------------------
+  SerialBT.println("Unknown command. Use T,HH:MM or 1 or 2.");
+}
