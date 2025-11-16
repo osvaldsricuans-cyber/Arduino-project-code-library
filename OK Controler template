@@ -1,0 +1,69 @@
+// Joystick pins
+#define VRX A0
+#define VRY A1
+#define SW  A2
+
+// Extra buttons
+#define BTN1 A3
+#define BTN2 A4
+#define BTN3 A5
+
+void setup() {
+  Serial.begin(9600);
+
+  // Joystick button
+  pinMode(SW, INPUT_PULLUP);
+
+  // Extra buttons
+  pinMode(BTN1, INPUT_PULLUP);
+  pinMode(BTN2, INPUT_PULLUP);
+  pinMode(BTN3, INPUT_PULLUP);
+}
+
+void loop() {
+  int x = analogRead(VRX); // 0-1023
+  int y = analogRead(VRY); // 0-1023
+  int joystickBtn = digitalRead(SW);
+
+  // --- Joystick directions ---
+  if (x < 400) {
+    Serial.println("Joystick LEFT");
+    // Add code for LEFT here
+  }
+  if (x > 600) {
+    Serial.println("Joystick RIGHT");
+    // Add code for RIGHT here
+  }
+  if (y < 400) {
+    Serial.println("Joystick UP");
+    // Add code for UP here
+  }
+  if (y > 600) {
+    Serial.println("Joystick DOWN");
+    // Add code for DOWN here
+  }
+
+  // --- Joystick button ---
+  if (joystickBtn == LOW) {
+    Serial.println("Joystick Button PRESSED");
+    // Add code for SW here
+  }
+
+  // --- Extra buttons ---
+  if (digitalRead(BTN1) == LOW) {
+    Serial.println("Button A3 PRESSED");
+    // Add custom code for BTN1 here
+  }
+
+  if (digitalRead(BTN2) == LOW) {
+    Serial.println("Button A4 PRESSED");
+    // Add custom code for BTN2 here
+  }
+
+  if (digitalRead(BTN3) == LOW) {
+    Serial.println("Button A5 PRESSED");
+    // Add custom code for BTN3 here
+  }
+
+  delay(100); // Adjust loop speed if needed
+}
