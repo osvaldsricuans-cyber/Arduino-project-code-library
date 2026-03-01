@@ -1,0 +1,23 @@
+#include <U8g2lib.h>
+#include <SPI.h>
+
+
+// =====================
+// OLED setup (hardware SPI)
+U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI U8G2(U8G2_R0, /* cs=*/ 5, /* dc=*/ 16, /* reset=*/ 17);
+
+// SPI pins for ESP32
+#define OLED_SCK 18
+#define OLED_MOSI 23
+#define OLED_CS 5
+
+
+void setup() {
+ U8G2.begin();
+}
+
+void loop() {
+U8G2.clearBuffer();
+U8G2.drawDisc(60,50,4);
+U8G2.sendBuffer();
+}
