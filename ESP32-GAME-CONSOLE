@@ -3,71 +3,102 @@
 #include <SPI.h>
 #include <EEPROM.h>
 
+// --- DISPLAY INITIALIZATION ---
 U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, 5, 16, 17);
 
-// Pins
-const int PIN_VRX    = 34;
-const int PIN_VRY    = 35;
-const int PIN_UP     = 26; 
-const int PIN_RIGHT  = 27; 
-const int PIN_LEFT   = 32; 
-const int PIN_DOWN   = 33; 
+// --- PIN DEFINITIONS ---
+const int PIN_VRX = 34;
+const int PIN_VRY = 35;
+const int PIN_UP = 26;
+const int PIN_RIGHT = 27;
+const int PIN_LEFT = 32; // EXIT BUTTON
+const int PIN_DOWN = 33;
 const int PIN_BUZZER = 22;
 
-// System
-int currentMode = 0; 
+// --- SYSTEM GLOBALS ---
+int currentMode = 0;
 int selectedGame = 0;
-const char* gameNames[] = {"MAZE RUNNER", "DINO JUMP", "SNAKE", "PONG VS AI"};
+const char* gameNames[] = {"MAZE RUNNER", "DINO JUMP", "SNAKE", "PONG VS AI", "TANK DEFENSE"};
 unsigned long globalTimer = 0;
 
-// High Scores
-int hsDino = 0, hsSnake = 0;
-
-// --- MAZE DATA ---
+// --- GAME VARIABLES ---
 #define M_SIZE 12
 int worldMap[M_SIZE][M_SIZE] = {
-  {1,1,1,1,1,1,1,1,1,1,1,1}, 
-  {1,0,0,0,1,0,0,0,0,0,0,1}, 
-  {1,0,1,0,1,0,1,1,1,1,0,1},
-  {1,0,1,0,0,0,1,0,0,0,0,1}, 
-  {1,0,1,1,1,1,1,0,1,1,1,1}, 
-  {1,0,0,0,0,0,0,0,1,2,0,1},
-  {1,1,1,0,1,1,1,1,1,0,1,1}, 
-  {1,0,0,0,1,0,0,0,0,0,0,1}, 
-  {1,0,1,1,1,0,1,1,1,1,0,1},
-  {1,0,0,0,0,0,0,0,0,0,0,1}, 
-  {1,0,1,1,1,1,1,1,1,1,0,1}, 
-  {1,1,1,1,1,1,1,1,1,1,1,1}
+  {1,1,1,1,1,1,1,1,1,1,1,1}, {1,0,0,0,1,0,0,0,0,0,0,1}, {1,0,1,0,1,0,1,1,1,1,0,1},
+  {1,0,1,0,0,0,1,0,0,0,0,1}, {1,0,1,1,1,1,1,0,1,1,1,1}, {1,0,0,0,0,0,0,0,1,2,0,1},
+  {1,1,1,0,1,1,1,1,1,0,1,1}, {1,0,0,0,1,0,0,0,0,0,0,1}, {1,0,1,1,1,0,1,1,1,1,0,1},
+  {1,0,0,0,0,0,0,0,0,0,0,1}, {1,0,1,1,1,1,1,1,1,1,0,1}, {1,1,1,1,1,1,1,1,1,1,1,1}
 };
-float pX = 1.5, pY = 1.5, dX = 1.0, dY = 0.0, plX = 0.0, plY = 0.66;
+float pX, pY, dX, dY, plX, plY; bool mazeWon;
+float dYpos; bool dJump; int oX, dScore; bool dOver;
+int snX[40], snY[40], snLen, snDir, foodX, foodY;
+int playerY, aiY, pScore, aiScore; float ballX, ballY, ballDX, ballDY;
+float tankAngle; int ammo; int wave; unsigned long gameStartMillis;
+struct Enemy { float x, y; int hp; bool active; };
+Enemy enemies[6];
+struct Bullet { float x, y, dx, dy; bool active; };
+Bullet b;
 
-// --- DINO DATA ---
-float dYpos = 40; bool dJump = false; int oX = 128, dScore = 0; bool dOver = false;
-
-// --- SNAKE DATA ---
-int snX[40], snY[40], snLen = 3, snDir = 1; 
-int foodX = 10, foodY = 5;
-
-// --- PONG DATA ---
-int playerY = 20, aiY = 20;
-float ballX = 64, ballY = 32, ballDX = 3, ballDY = 2;
-int pScore = 0, aiScore = 0;
+// --- RESET ALL GAMES ---
+void resetAllGames() {
+  pX = 1.5; pY = 1.5; dX = 1.0; dY = 0.0; plX = 0.0; plY = 0.66; mazeWon = false;
+  dYpos = 40; dJump = false; oX = 128; dScore = 0; dOver = false;
+  snLen = 3; snDir = 1; snX[0] = 10; snY[0] = 5; foodX = random(2, 19); foodY = random(2, 9);
+  playerY = 24; aiY = 24; pScore = 0; aiScore = 0; ballX = 64; ballY = 32; ballDX = 3; ballDY = 2;
+  tankAngle = 0; ammo = 10; b.active = false; wave = 0; gameStartMillis = millis();
+  for(int i=0; i<6; i++) enemies[i].active = false;
+  wave = 1; ammo = 10; 
+  gameStartMillis = millis();
+}
 
 void checkExit() {
-  if (digitalRead(PIN_LEFT) == LOW) { currentMode = 0; noTone(PIN_BUZZER); delay(300); }
+  if (digitalRead(PIN_LEFT) == LOW) {
+    currentMode = 0; noTone(PIN_BUZZER); resetAllGames(); delay(300);
+  }
 }
 
-void setup() {
-  u8g2.begin();
-  EEPROM.begin(64); 
-  hsDino = EEPROM.read(0); hsSnake = EEPROM.read(4);
-  pinMode(PIN_VRX, INPUT); pinMode(PIN_VRY, INPUT);
-  pinMode(PIN_UP, INPUT_PULLUP); pinMode(PIN_DOWN, INPUT_PULLUP);
-  pinMode(PIN_LEFT, INPUT_PULLUP); pinMode(PIN_RIGHT, INPUT_PULLUP);
-  pinMode(PIN_BUZZER, OUTPUT);
+// --- GAMES ---
+void runMaze() {
+  checkExit();
+  if (mazeWon) {
+    u8g2.clearBuffer(); u8g2.drawStr(35, 35, "YOU WON!"); u8g2.sendBuffer();
+    tone(PIN_BUZZER, 800, 500); delay(2000); resetAllGames(); currentMode = 0; return;
+  }
+  u8g2.clearBuffer();
+  float mSpd = 0.05, rSpd = 0.04;
+  if (digitalRead(PIN_UP) == LOW) { if(worldMap[(int)(pX+dX*mSpd)][(int)pY]==0) pX+=dX*mSpd; if(worldMap[(int)pX][(int)(pY+dY*mSpd)]==0) pY+=dY*mSpd; }
+  if (digitalRead(PIN_DOWN) == LOW) { if(worldMap[(int)(pX-dX*mSpd)][(int)pY]==0) pX-=dX*mSpd; if(worldMap[(int)pX][(int)(pY-dY*mSpd)]==0) pY-=dY*mSpd; }
+  int rVal = analogRead(PIN_VRX);
+  if (rVal > 3000) { float oDX=dX; dX=dX*cos(rSpd)-dY*sin(rSpd); dY=oDX*sin(rSpd)+dY*cos(rSpd); float oPX=plX; plX=plX*cos(rSpd)-plY*sin(rSpd); plY=oPX*sin(rSpd)+plY*cos(rSpd); }
+  if (rVal < 1000) { float oDX=dX; dX=dX*cos(-rSpd)-dY*sin(-rSpd); dY=oDX*sin(-rSpd)+dY*cos(-rSpd); float oPX=plX; plX=plX*cos(-rSpd)-plY*sin(-rSpd); plY=oPX*sin(-rSpd)+plY*cos(-rSpd); }
+  for (int x = 0; x < 128; x++) {
+    float camX = 2 * x / 128.0 - 1; float rDX = dX + plX * camX, rDY = dY + plY * camX;
+    int mX = (int)pX, mY = (int)pY; float dDX = abs(1/rDX), dDY = abs(1/rDY), sDX, sDY;
+    int stX, stY, hit = 0, side, hT = 0;
+    if (rDX < 0) { stX = -1; sDX = (pX - mX) * dDX; } else { stX = 1; sDX = (mX + 1.0 - pX) * dDX; }
+    if (rDY < 0) { stY = -1; sDY = (pY - mY) * dDY; } else { stY = 1; sDY = (mY + 1.0 - pY) * dDY; }
+    while (hit == 0) { if (sDX < sDY) { sDX += dDX; mX += stX; side = 0; } else { sDY += dDY; mY += stY; side = 1; } if (worldMap[mX][mY] > 0) { hit = 1; hT = worldMap[mX][mY]; } }
+    float pWD = (side == 0) ? (mX - pX + (1 - stX) / 2) / rDX : (mY - pY + (1 - stY) / 2) / rDY;
+    int lH = (int)(64 / pWD); if (x == 64 && hT == 2) { mazeWon = true; }
+    if (hT == 2) u8g2.drawVLine(x, 32 - lH/4, lH/2); else { if(side == 1) for(int y=32-lH/2; y<32+lH/2; y+=2) u8g2.drawPixel(x,y); else u8g2.drawVLine(x, 32 - lH/2, lH); }
+  }
+  u8g2.sendBuffer();
 }
 
-// --- SNAKE GAME ---
+void runDino() {
+  checkExit();
+  if (millis() - globalTimer < 40) return; globalTimer = millis();
+  u8g2.clearBuffer();
+  if (!dOver) {
+    if (digitalRead(PIN_UP) == LOW && dYpos == 40) dJump = true;
+    if (dJump) { dYpos -= 4; if (dYpos <= 10) dJump = false; } else if (dYpos < 40) dYpos += 4;
+    oX -= 4; if (oX < 0) { oX = 128; dScore++; }
+    if (oX > 15 && oX < 25 && dYpos > 30) { dOver = true; tone(PIN_BUZZER, 150, 400); }
+  } else { u8g2.drawStr(30, 30, "GAMEOVER"); if (digitalRead(PIN_RIGHT) == LOW) { dOver = false; dScore = 0; oX = 128; } }
+  u8g2.drawLine(0, 45, 128, 45); u8g2.drawDisc(20, dYpos, 5); u8g2.drawTriangle(oX, 45, oX-5, 30, oX-10, 45);
+  u8g2.setCursor(110, 10); u8g2.print(dScore); u8g2.sendBuffer();
+}
+
 void runSnake() {
   checkExit();
   if (millis() - globalTimer < 150) return; 
@@ -100,62 +131,200 @@ void runSnake() {
   u8g2.sendBuffer();
 }
 
-// --- PONG GAME ---
 void runPong() {
   checkExit();
-  if (millis() - globalTimer < 30) return;
+  if (millis() - globalTimer < 30) return; 
   globalTimer = millis();
 
-  // Player Control (Joystick VRY)
+  // 1. Player Control
   int ry = analogRead(PIN_VRY);
-  if (ry < 1000) playerY -= 3; if (ry > 3000) playerY += 3;
+  if (ry < 1000) playerY -= 3; 
+  if (ry > 3000) playerY += 3;
   playerY = constrain(playerY, 0, 48);
 
-  // AI Control
-  if (ballY > aiY + 8) aiY += 2; else if (ballY < aiY + 8) aiY -= 2;
+  // 2. AI Logic (Increased Starting Difficulty + Disadvantage)
+  static int aiThinkCounter = 0;
+  aiThinkCounter++;
+
+  // Higher starting difficulty: Reaction limit starts at 2 instead of 4
+  int aiReactionLimit = max(0, 2 - (pScore / 4)); 
+  int aiSpeed = (pScore > 3) ? 3 : 2; 
+
+  // AI DISADVANTAGE: The AI gets "confused" if the ball is moving very fast 
+  // or if the ball is on the player's side of the screen.
+  bool aiCanSeeBall = (ballX > 40); 
+
+  if (aiThinkCounter >= aiReactionLimit && aiCanSeeBall) {
+    // Adding a larger "error margin" so the AI doesn't always hit with the center
+    if (ballY > aiY + 10) aiY += aiSpeed; 
+    else if (ballY < aiY + 6) aiY -= aiSpeed;
+    aiThinkCounter = 0; 
+  }
   aiY = constrain(aiY, 0, 48);
 
-  // Ball Movement
-  ballX += ballDX; ballY += ballDY;
-  if (ballY <= 0 || ballY >= 60) ballDY = -ballDY;
+  // 3. Ball Movement & Infinite Loop Fix
+  ballX += ballDX; 
+  ballY += ballDY;
 
-  // Collision Player
-  if (ballX <= 10 && ballY >= playerY && ballY <= playerY + 16) { ballDX = -ballDX; tone(PIN_BUZZER, 1000, 20); }
-  // Collision AI
-  if (ballX >= 118 && ballY >= aiY && ballY <= aiY + 16) { ballDX = -ballDX; tone(PIN_BUZZER, 1000, 20); }
+  // Wall Bounces
+  if (ballY <= 0 || ballY >= 62) {
+    ballDY = -ballDY;
+    // Fix: Ensure ballDY never stays near 0
+    if (abs(ballDY) < 0.5) ballDY = (ballDY > 0) ? 1.0 : -1.0;
+    tone(PIN_BUZZER, 800, 10);
+  }
 
-  // Scoring
-  if (ballX < 0) { aiScore++; ballX = 64; ballDX = 3; tone(PIN_BUZZER, 200, 200); }
-  if (ballX > 128) { pScore++; ballX = 64; ballDX = -3; tone(PIN_BUZZER, 1200, 100); }
+  // 4. Paddle Collisions (Physics Fix)
+  // Player Paddle
+  if (ballX <= 9 && ballX >= 5 && ballY >= playerY && ballY <= playerY + 16) { 
+    ballDX = abs(ballDX) + 0.1; // Increase speed
+    // Fix: Add "English" (spin). Ball angle changes based on where it hits paddle
+    ballDY += (ballY - (playerY + 8)) * 0.2; 
+    ballX = 10; // Prevent clipping
+    tone(PIN_BUZZER, 1000, 20); 
+  }
+  
+  // AI Paddle
+  if (ballX >= 115 && ballX <= 119 && ballY >= aiY && ballY <= aiY + 16) { 
+    ballDX = -abs(ballDX) - 0.1; 
+    ballDY += (ballY - (aiY + 8)) * 0.2; 
+    ballX = 114; // Prevent clipping
+    tone(PIN_BUZZER, 1000, 20); 
+  }
 
+  // 5. Scoring
+  if (ballX < 0) { aiScore++; resetBall(1); tone(PIN_BUZZER, 200, 300); }
+  if (ballX > 128) { pScore++; resetBall(-1); tone(PIN_BUZZER, 1200, 100); }
+
+  // 6. Draw
   u8g2.clearBuffer();
   u8g2.drawFrame(0, 0, 128, 64);
-  u8g2.drawBox(5, playerY, 4, 16); // Player
-  u8g2.drawBox(119, aiY, 4, 16);  // AI
-  u8g2.drawDisc(ballX, ballY, 2);  // Ball
-  u8g2.setCursor(40, 12); u8g2.print(pScore); u8g2.setCursor(80, 12); u8g2.print(aiScore);
+  u8g2.drawVLine(64, 0, 64);
+  u8g2.drawBox(5, playerY, 4, 16); 
+  u8g2.drawBox(119, aiY, 4, 16);
+  u8g2.drawDisc(ballX, ballY, 2);
+  u8g2.setCursor(45, 12); u8g2.print(pScore); 
+  u8g2.setCursor(75, 12); u8g2.print(aiScore);
   u8g2.sendBuffer();
 }
 
-// --- RUN MAZE & DINO (Abbreviated for space, use previous versions) ---
-void runMaze() { /* ... Same as previous ... */ }
-void runDino() { /* ... Same as previous ... */ }
+void resetBall(int direction) {
+  ballX = 64; 
+  ballY = 32; 
+  ballDX = 2.5 * direction; 
+  // Fix: Randomize starting Y velocity so it never starts perfectly horizontal
+  ballDY = (random(0, 2) == 0) ? random(-3, -1) : random(1, 3);
+}
+
+void runTank() {
+  checkExit();
+  if (millis() - globalTimer < 40) return; 
+  globalTimer = millis();
+
+  // 1. Controls: Rotation & Firing
+  int rx = analogRead(PIN_VRX) - 2048;
+  int ry = analogRead(PIN_VRY) - 2048;
+  if (abs(rx) > 500 || abs(ry) > 500) tankAngle = atan2(ry, rx);
+  
+  if (digitalRead(PIN_UP) == LOW && !b.active && ammo > 0) {
+    b.active = true; b.x = 64; b.y = 32;
+    b.dx = cos(tankAngle) * 4; b.dy = sin(tankAngle) * 4;
+    ammo--; 
+    tone(PIN_BUZZER, 1500, 20);
+  }
+
+  // 2. Wave Logic
+  bool waveClear = true;
+  for(int i=0; i<6; i++) if(enemies[i].active) waveClear = false;
+  
+  if(waveClear) {
+    wave++; // Increase wave number
+    tone(PIN_BUZZER, 500, 100); // Small sound for new wave
+    for(int i=0; i < min(wave, 6); i++) {
+      enemies[i].x = random(0, 2) ? 0 : 128; 
+      enemies[i].y = random(0, 64);
+      enemies[i].hp = (random(0, 10) > 7) ? 2 : 1; 
+      enemies[i].active = true;
+    }
+  }
+
+  u8g2.clearBuffer();
+
+  // 3. UI OVERLAY (Ammo and Wave)
+  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setCursor(2, 62); 
+  u8g2.print("AMMO: "); u8g2.print(ammo);
+  
+  u8g2.setCursor(80, 62); 
+  u8g2.print("WAVE: "); u8g2.print(wave);
+
+  // 4. Update Bullet
+  if (b.active) {
+    b.x += b.dx; b.y += b.dy;
+    u8g2.drawDisc(b.x, b.y, 1);
+    if (b.x < 0 || b.x > 128 || b.y < 0 || b.y > 64) b.active = false;
+  }
+
+  // 5. Update Enemies
+  for(int i=0; i<6; i++) {
+    if(!enemies[i].active) continue;
+    
+    // Move toward player (center)
+    float ang = atan2(32 - enemies[i].y, 64 - enemies[i].x);
+    enemies[i].x += cos(ang) * (0.3 + (wave * 0.05)); // Enemies get faster each wave
+    enemies[i].y += sin(ang) * (0.3 + (wave * 0.05));
+    
+    // Draw Enemy
+    if(enemies[i].hp == 2) u8g2.drawBox(enemies[i].x-3, enemies[i].y-3, 6, 6);
+    else u8g2.drawFrame(enemies[i].x-3, enemies[i].y-3, 6, 6);
+
+    // Bullet Hit
+    if(b.active && abs(b.x - enemies[i].x) < 5 && abs(b.y - enemies[i].y) < 5) {
+      enemies[i].hp--; 
+      b.active = false;
+      if(enemies[i].hp <= 0) {
+        enemies[i].active = false; 
+        ammo = min(20, ammo + 2); // Gain 2 ammo per kill, max 20
+        tone(PIN_BUZZER, 1000, 30);
+      }
+    }
+    
+    // Game Over Collision
+    if(abs(enemies[i].x - 64) < 6 && abs(enemies[i].y - 32) < 6) {
+      tone(PIN_BUZZER, 150, 600); 
+      resetAllGames(); 
+      currentMode = 0; 
+    }
+  }
+
+  // 6. Draw Player (Turret)
+  u8g2.drawCircle(64, 32, 5);
+  u8g2.drawLine(64, 32, 64 + cos(tankAngle)*9, 32 + sin(tankAngle)*9);
+  u8g2.sendBuffer();
+}
+
+// --- SETUP AND LOOP ---
+void setup() {
+  u8g2.begin();
+  pinMode(PIN_VRX, INPUT); pinMode(PIN_VRY, INPUT);
+  pinMode(PIN_UP, INPUT_PULLUP); pinMode(PIN_DOWN, INPUT_PULLUP);
+  pinMode(PIN_LEFT, INPUT_PULLUP); pinMode(PIN_RIGHT, INPUT_PULLUP);
+  pinMode(PIN_BUZZER, OUTPUT);
+  resetAllGames();
+}
 
 void loop() {
   if (currentMode == 0) {
-    u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(30, 15, "GAME SELECT");
-    for(int i=0; i<4; i++) {
-      if (i == selectedGame) u8g2.drawButtonUTF8(5, 25+(i*10), U8G2_BTN_INV, 118, 0, 1, gameNames[i]);
-      else u8g2.drawStr(10, 25+(i*10), gameNames[i]);
-    }
-    if (digitalRead(PIN_UP) == LOW) { selectedGame = (selectedGame > 0) ? selectedGame - 1 : 3; delay(200); }
-    if (digitalRead(PIN_DOWN) == LOW) { selectedGame = (selectedGame < 3) ? selectedGame + 1 : 0; delay(200); }
-    if (digitalRead(PIN_RIGHT) == LOW) { currentMode = selectedGame + 1; delay(300); }
+    u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); u8g2.drawStr(30, 12, "GAME SELECT");
+    for(int i=0; i<5; i++) { if (i == selectedGame) u8g2.drawButtonUTF8(5, 22+(i*9), U8G2_BTN_INV, 118, 0, 1, gameNames[i]); else u8g2.drawStr(10, 22+(i*9), gameNames[i]); }
+    if (digitalRead(PIN_UP) == LOW) { selectedGame = (selectedGame > 0) ? selectedGame - 1 : 4; delay(200); }
+    if (digitalRead(PIN_DOWN) == LOW) { selectedGame = (selectedGame < 4) ? selectedGame + 1 : 0; delay(200); }
+    if (digitalRead(PIN_RIGHT) == LOW) { currentMode = selectedGame + 1; resetAllGames(); delay(300); }
     u8g2.sendBuffer();
   } 
   else if (currentMode == 1) runMaze();
   else if (currentMode == 2) runDino();
   else if (currentMode == 3) runSnake();
   else if (currentMode == 4) runPong();
+  else if (currentMode == 5) runTank();
 }
