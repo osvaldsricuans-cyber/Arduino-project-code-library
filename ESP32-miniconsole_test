@@ -1,0 +1,82 @@
+#include <Arduino.h>
+#include <U8g2lib.h>
+#include <SPI.h>
+
+// OLED Setup (Hardware SPI)
+// Constructor: U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI(rotation, cs, dc, [reset])
+U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, 5, 16, 17);
+
+// Pin Definitions
+const int PIN_VRX    = 34;
+const int PIN_VRY    = 35;
+const int PIN_UP     = 26;
+const int PIN_RIGHT  = 27;
+const int PIN_LEFT   = 32;
+const int PIN_DOWN   = 33;
+const int PIN_BUZZER = 22;
+const int LED_1 = 
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize OLED
+  u8g2.begin();
+
+  // Initialize Buttons (using INPUT_PULLUP assuming they connect to GND when pressed)
+  pinMode(PIN_UP, INPUT_PULLUP);
+  pinMode(PIN_RIGHT, INPUT_PULLUP);
+  pinMode(PIN_LEFT, INPUT_PULLUP);
+  pinMode(PIN_DOWN, INPUT_PULLUP);
+
+  // Initialize Buzzer
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);
+
+  Serial.println("System Initialized");
+}
+
+void loop() {
+  // 1. Read Analog Joystick
+  int rawX = analogRead(PIN_VRX);
+  int rawY = analogRead(PIN_VRY);
+
+  // Map 0-4095 (ESP32 ADC) to Screen Coordinates (0-127, 0-63)
+  int posX = map(rawX, 0, 4095, 0, 127);
+  int posY = map(rawY, 4095, 0, 63, 0); // Inverted Y so 'up' is up
+
+  // 2. Read Buttons (Active LOW)
+  bool btnUp    = !digitalRead(PIN_UP);
+  bool btnDown  = !digitalRead(PIN_DOWN);
+  bool btnLeft  = !digitalRead(PIN_LEFT);
+  bool btnRight = !digitalRead(PIN_RIGHT);
+
+  // 3. Sound logic: Beep if any button is pressed
+  if (btnUp || btnDown || btnLeft || btnRight) {
+    digitalWrite(PIN_BUZZER, HIGH);
+  } else {
+    digitalWrite(PIN_BUZZER, LOW);
+  }
+
+  // 4. Update Display
+  u8g2.clearBuffer();
+  
+  // Draw the moving circle (Joystick control)
+  u8g2.drawDisc(posX, posY, 5);
+
+  // Draw UI text
+  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setCursor(0, 10);
+  u8g2.print("X:"); u8g2.print(rawX);
+  u8g2.setCursor(0, 20);
+  u8g2.print("Y:"); u8g2.print(rawY);
+
+  // Draw Button Indicators
+  if (btnUp)    u8g2.drawStr(60, 10, "UP");
+  if (btnDown)  u8g2.drawStr(60, 60, "DOWN");
+  if (btnLeft)  u8g2.drawStr(30, 35, "LEFT");
+  if (btnRight) u8g2.drawStr(90, 35, "RIGHT");
+
+  u8g2.sendBuffer();
+
+  delay(10); // Small delay for stability
+}
