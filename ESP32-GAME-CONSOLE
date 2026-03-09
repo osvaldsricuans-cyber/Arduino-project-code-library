@@ -305,6 +305,13 @@ void runTank() {
 
 // --- SETUP AND LOOP ---
 void setup() {
+ pinMode(13, OUTPUT);
+  digitalWrite(13, LOW); 
+  pinMode(14, OUTPUT);
+  digitalWrite(14, LOW);
+  pinMode(25, OUTPUT);
+  digitalWrite(25, LOW);
+
   u8g2.begin();
   pinMode(PIN_VRX, INPUT); pinMode(PIN_VRY, INPUT);
   pinMode(PIN_UP, INPUT_PULLUP); pinMode(PIN_DOWN, INPUT_PULLUP);
@@ -314,6 +321,9 @@ void setup() {
 }
 
 void loop() {
+  
+  
+  
   if (currentMode == 0) {
     u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); u8g2.drawStr(30, 12, "GAME SELECT");
     for(int i=0; i<5; i++) { if (i == selectedGame) u8g2.drawButtonUTF8(5, 22+(i*9), U8G2_BTN_INV, 118, 0, 1, gameNames[i]); else u8g2.drawStr(10, 22+(i*9), gameNames[i]); }
